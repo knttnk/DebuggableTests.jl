@@ -164,10 +164,20 @@ function show_test_result()
     function show_test_result_impl(testset::TestSet, nest::Int, indent::String="  ")
         for test in testset.tests
             __testname = "$(repeat(indent, nest))$(test.name)"
+            function print_location()
+                space = repeat(" ", length(__testname))
+                printstyled(
+                    " $space @ $(test.location)\n",
+                    color=:light_black,
+                )
+            end
             if test isa Test
                 printstyled("$__testname: ", color=:light_black)
                 color = test.status == Passed ? :green : :red
                 printstyled("$(test.status)\n", color=color)
+                if test.status == Failed || test.status == Errored
+                    print_location()
+                end
             elseif test isa TestSet
                 printstyled("$__testname", bold=true)
                 if isnothing(test.error)
@@ -176,15 +186,11 @@ function show_test_result()
                 else
                     print(": ")
                     printstyled(
-                        "$(test.error)",
+                        "$(test.error)\n",
                         color=:red,
                         bold=true,
                     )
-                    space = repeat(" ", length(__testname))
-                    printstyled(
-                        "\n $space @ $(test.location)\n",
-                        color=:light_black,
-                    )
+                    print_location()
                     show_test_result_impl(test, nest + 1, indent)
                 end
             end
