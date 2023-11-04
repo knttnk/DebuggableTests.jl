@@ -12,6 +12,7 @@ end
 struct Test
     name::String
     status::TestStatus
+    location::String
 end
 
 """
@@ -26,6 +27,7 @@ editing_testset_indexは，現在編集中のテストセットのインデッ�
     tests::Vector{Union{TestSet,Test}}
     editing_testset_index::Int64
     error = nothing
+    location::String = ""
 end
 
 const global_testset = TestSet(
@@ -87,7 +89,7 @@ function end_testset(error=nothing)
     p.editing_testset_index = 0
 end
 
-function new_testset(name::String)
+function new_testset(name::String, location::String)
     c = current_testset()
     n = length(c.tests)
     c.editing_testset_index = n + 1
@@ -96,16 +98,17 @@ function new_testset(name::String)
         [TestSet(
             name=name,
             tests=[],
-            editing_testset_index=0
+            editing_testset_index=0,
+            location=location,
         )]
     )
 end
 
-function new_test(name::String, val)
+function new_test(name::String, val, location::String="")
     c = current_testset()
     append!(
         c.tests,
-        [Test(name, val === true ? Passed : Failed)],
+        [Test(name, val === true ? Passed : Failed, location)],
     )
 end
 
@@ -117,10 +120,10 @@ macro testset(exs...)
         local name = exs[1]
         local block = exs[2]
     end
-    location = "$(__source__.file):$(__source__.line)"
+    local location = "$(__source__.file):$(__source__.line)"
 
     return quote
-        $(new_testset)($(name))
+        $(new_testset)($(name), $(location))
         local e
         try
             $(esc(block))
@@ -148,10 +151,11 @@ macro test(exs...)
         local name = exs[1]
         local block = exs[2]
     end
+    local location = "$(__source__.file):$(__source__.line)"
 
     return quote
         local val = $(esc(block))
-        $(new_test)($(name), val)
+        $(new_test)($(name), val, $(location))
     end
 end
 
@@ -172,9 +176,14 @@ function show_test_result()
                 else
                     print(": ")
                     printstyled(
-                        "$(test.error)\n",
+                        "$(test.error)",
                         color=:red,
                         bold=true,
+                    )
+                    space = repeat(" ", length(__testname))
+                    printstyled(
+                        "\n $space @ $(test.location)\n",
+                        color=:light_black,
                     )
                     show_test_result_impl(test, nest + 1, indent)
                 end
