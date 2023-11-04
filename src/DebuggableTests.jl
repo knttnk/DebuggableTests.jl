@@ -21,13 +21,18 @@ editing_testset_indexは，現在編集中のテストセットのインデッ�
 0のときは，現在編集中のテストセットは自分自身．
 -1のときは，現在編集中のテストセットは自分や子ではない．
 """
-mutable struct TestSet
+@kwdef mutable struct TestSet
     name::String
     tests::Vector{Union{TestSet,Test}}
     editing_testset_index::Int64
+    error = nothing
 end
 
-const global_testset = TestSet("global", [], 0)
+const global_testset = TestSet(
+    name="global",
+    tests=[],
+    editing_testset_index=0
+)
 
 function children(ts::TestSet)::Vector{Union{TestSet,Test}}
     children_list = Vector{Union{TestSet,Test}}()
@@ -74,9 +79,10 @@ function current_testset()::TestSet
     end
 end
 
-function end_testset()
+function end_testset(error=nothing)
     c = current_testset()
     p = parent_testset()
+    c.error = error
     c.editing_testset_index = -1
     p.editing_testset_index = 0
 end
@@ -85,7 +91,14 @@ function new_testset(name::String)
     c = current_testset()
     n = length(c.tests)
     c.editing_testset_index = n + 1
-    append!(c.tests, [TestSet(name, [], 0)])
+    append!(
+        c.tests,
+        [TestSet(
+            name=name,
+            tests=[],
+            editing_testset_index=0
+        )]
+    )
 end
 
 function new_test(name::String, val)
@@ -104,11 +117,25 @@ macro testset(exs...)
         local name = exs[1]
         local block = exs[2]
     end
+    location = "$(__source__.file):$(__source__.line)"
 
     return quote
         $(new_testset)($(name))
-        $(esc(block))
-        $(end_testset)()
+        local e
+        try
+            $(esc(block))
+        catch e
+            local l = $(location)
+            printstyled(e, color=:red, bold=true)
+            printstyled(
+                "\n  @ $(l)\n",
+                color=:light_black,
+            )
+
+            $(end_testset)(e)
+        else
+            $(end_testset)()
+        end
     end
 end
 
@@ -132,11 +159,25 @@ function show_test_result()
     global global_testset
     function show_test_result_impl(testset::TestSet, nest::Int, indent::String="  ")
         for test in testset.tests
+            __testname = "$(repeat(indent, nest))$(test.name)"
             if test isa Test
-                println("$(repeat(indent, nest))$(test.name) : $(test.status)")
+                printstyled("$__testname: ", color=:light_black)
+                color = test.status == Passed ? :green : :red
+                printstyled("$(test.status)\n", color=color)
             elseif test isa TestSet
-                println("$(repeat(indent, nest))$(test.name)")
-                show_test_result_impl(test, nest + 1, indent)
+                printstyled("$__testname", bold=true)
+                if isnothing(test.error)
+                    print("\n")
+                    show_test_result_impl(test, nest + 1, indent)
+                else
+                    print(": ")
+                    printstyled(
+                        "$(test.error)\n",
+                        color=:red,
+                        bold=true,
+                    )
+                    show_test_result_impl(test, nest + 1, indent)
+                end
             end
         end
     end
